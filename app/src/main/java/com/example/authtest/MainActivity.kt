@@ -1,11 +1,14 @@
 package com.example.app
 
+import android.content.Context
+import android.content.DialogInterface
 import android.os.Bundle
 import android.util.Log
 import androidx.appcompat.app.AppCompatActivity
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
+import androidx.appcompat.app.AlertDialog
 import com.example.authtest.R
 import com.google.firebase.FirebaseException
 import com.google.firebase.FirebaseTooManyRequestsException
@@ -24,41 +27,6 @@ class MainActivity : AppCompatActivity() {
 
     private var verificationId :String? = null
     private var storedToken :PhoneAuthProvider.ForceResendingToken? = null
-    val callbacks = object : PhoneAuthProvider.OnVerificationStateChangedCallbacks() {
-
-        override fun onVerificationCompleted(credential: PhoneAuthCredential) {
-            Log.d(TAG, "onVerificationCompleted:$credential")
-
-            signInWithPhoneAuthCredential(credential)
-        }
-
-        override fun onVerificationFailed(e: FirebaseException) {
-            Log.w(TAG, "onVerificationFailed", e)
-
-            if (e is FirebaseAuthInvalidCredentialsException) {
-                // Invalid request
-                // ...
-            } else if (e is FirebaseTooManyRequestsException) {
-                // The SMS quota for the project has been exceeded
-                // ...
-            }
-        }
-
-        override fun onCodeSent(
-            newVerificationId: String,
-            token: PhoneAuthProvider.ForceResendingToken
-        ) {
-            Log.d(TAG, "onCodeSent:$newVerificationId")
-
-            verificationId = newVerificationId
-            storedToken = token
-        }
-
-        override fun onCodeAutoRetrievalTimeOut(newVerificationId: String?) {
-            Log.d(TAG, "timeOut Reached")
-            verificationId = newVerificationId
-        }
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -67,25 +35,92 @@ class MainActivity : AppCompatActivity() {
 
         FirebaseAuth.getInstance().setLanguageCode("es")
 
+        val user = FirebaseAuth.getInstance().currentUser
+        if (user != null){
+            Log.i(TAG,"Current User already logged in: $user")
+        }
+
         phoneButton.setOnClickListener {
-            if (inputPhone.text.isNotBlank() && inputPhone.text.isNotEmpty()){
-                PhoneAuthProvider.getInstance().verifyPhoneNumber(
-                    inputPhone.text.toString(), // Phone number to verify
-                    5, // Timeout duration
-                    TimeUnit.MINUTES, // Unit of timeout
-                    this, // Activity (for callback binding)
-                    callbacks) // OnVerificationStateChangedCallbacks
-                phoneLayout.setVisibility(View.GONE)
-                codeLayout.setVisibility(View.VISIBLE)
-            }
+            sendVerificationCode()
         }
 
         signButton.setOnClickListener {
             if (inputCode.text.isNotBlank() && inputCode.text.isNotEmpty()){
                 signInWithPhoneAuthCode(inputCode.text.toString())
+            }
+        }
+    }
+
+    fun sendVerificationCode(){
+        val context :Context = this
+
+        val callbacks = object : PhoneAuthProvider.OnVerificationStateChangedCallbacks() {
+
+            override fun onVerificationCompleted(credential: PhoneAuthCredential) {
+                Log.d(TAG, "AutoVerificationSuccessful: $credential")
+                signInWithPhoneAuthCredential(credential)
+
                 phoneLayout.setVisibility(View.VISIBLE)
                 codeLayout.setVisibility(View.VISIBLE)
             }
+
+            override fun onVerificationFailed(e: FirebaseException) {
+                Log.w(TAG, "onVerificationFailed", e)
+
+                if (e is FirebaseAuthInvalidCredentialsException) {
+                    showPopop(context, "Número Invalido")
+
+                } else if (e is FirebaseTooManyRequestsException) {
+                    showPopop(context, "Máximo número de códigos enviados exedido. Reintente en unos minutos")
+                }
+
+                phoneLayout.setVisibility(View.VISIBLE)
+                codeLayout.setVisibility(View.GONE)
+            }
+
+            override fun onCodeSent(
+                newVerificationId: String,
+                token: PhoneAuthProvider.ForceResendingToken
+            ) {
+                Log.d(TAG, "onCodeSent: $newVerificationId")
+
+                verificationId = newVerificationId
+                storedToken = token
+
+                phoneLayout.setVisibility(View.GONE)
+                codeLayout.setVisibility(View.VISIBLE)
+            }
+
+            override fun onCodeAutoRetrievalTimeOut(newVerificationId: String?) {
+                Log.d(TAG, "timeOut Reached")
+                verificationId = newVerificationId
+
+                phoneLayout.setVisibility(View.VISIBLE)
+                codeLayout.setVisibility(View.GONE)
+            }
+        }
+
+        if (inputPhone.text.isNotBlank() && inputPhone.text.isNotEmpty()){
+            val number :String = "+52"+inputPhone.text.toString()
+
+            Log.i(TAG,"Telefono: $number")
+
+            PhoneAuthProvider.getInstance().verifyPhoneNumber(
+                number, // Phone number to verify
+                2, // Timeout duration
+                TimeUnit.MINUTES, // Unit of timeout
+                this, // Activity (for callback binding)
+                callbacks) // OnVerificationStateChangedCallbacks
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        val user = FirebaseAuth.getInstance().currentUser
+        if (user != null){
+            Log.i(TAG,"Current User already logged in: $user")
+        } else {
+            sendVerificationCode()
         }
     }
 
@@ -96,13 +131,14 @@ class MainActivity : AppCompatActivity() {
                     // Sign in success, update UI with the signed-in user's information
                     Log.d(TAG, "signInWithCredential:success")
 
-                    val user = task.result?.user
-                    // ...
+                    val user = task.result?.user.toString()
+                    Log.i(TAG,"User: $user")
+                    showPopop(this,"Autenticado Correctamente")
                 } else {
                     // Sign in failed, display a message and update the UI
                     Log.w(TAG, "signInWithCredential:failure", task.exception)
                     if (task.exception is FirebaseAuthInvalidCredentialsException) {
-                        // The verification code entered was invalid
+                        showPopop(this,"Código Incorrecto")
                     }
                 }
             }
@@ -112,11 +148,18 @@ class MainActivity : AppCompatActivity() {
         Log.d(TAG,"onGetCredential")
         if (verificationId != null){
             val credential = PhoneAuthProvider.getCredential(verificationId!!, code)
-            Log.d(TAG,"credential successful")
+            Log.i(TAG,"credential successful")
             signInWithPhoneAuthCredential(credential)
         } else {
-            Log.d(TAG,"verificationId null")
+            Log.e(TAG,"verificationId null")
         }
+    }
+
+    fun showPopop(context : Context, msg :String){
+        AlertDialog.Builder(context)
+            .setMessage(msg)
+            .create()
+            .show()
     }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
