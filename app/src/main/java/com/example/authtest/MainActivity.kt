@@ -8,6 +8,7 @@ import androidx.appcompat.app.AppCompatActivity
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
+import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import com.example.authtest.R
 import com.google.firebase.FirebaseException
@@ -37,7 +38,8 @@ class MainActivity : AppCompatActivity() {
 
         val user = FirebaseAuth.getInstance().currentUser
         if (user != null){
-            Log.i(TAG,"Current User already logged in: $user")
+            Toast.makeText(this, "Current User already logged in: ${user.uid}", Toast.LENGTH_LONG)
+                .show()
         }
 
         phoneButton.setOnClickListener {
